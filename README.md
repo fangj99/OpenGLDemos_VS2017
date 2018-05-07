@@ -14,3 +14,5 @@ http://ogldev.atspace.co.uk/index.html
 #### Added glew and freeglut path to the relative "Include Directories" and "Library Directories" to the VC++ Directories in the "Configuration Properties"
 
 #### Added command for copy glew and freeglut dll files to the output dir in Build Events -> Post-Build Event
+
+#### Please select "Release" and "Win32" to build, if select "Debug", then need setup the "VC++ Directories" and "Post-Build Event"
