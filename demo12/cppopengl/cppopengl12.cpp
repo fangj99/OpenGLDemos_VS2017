@@ -1,0 +1,194 @@
+﻿#include "stdafx.h"
+#include <stdio.h>
+#include <string.h>
+
+#include <math.h>
+#include <glew.h>
+#include <freeglut.h>
+
+#include "ogldev_util.h"
+// 管线类
+#include "ogldev_pipeline.h"
+// 屏幕宽高宏定义
+#define WINDOW_WIDTH 1024
+#define WINDOW_HEIGHT 768
+
+GLuint VBO;
+GLuint IBO;
+GLuint gWorldLocation;
+// 透视变换配置参数数据结构
+PersProjInfo gPersProjInfo;
+
+const char* pVSFileName = "shader.vs";
+const char* pFSFileName = "shader.fs";
+
+
+static void RenderSceneCB()
+{
+	glClear(GL_COLOR_BUFFER_BIT);
+
+	static float Scale = 0.0f;
+
+	Scale += 0.1f;
+
+	Pipeline p;
+	p.Rotate(0.0f, Scale, 0.0f);
+	p.WorldPos(0.0f, 0.0f, 5.0f);
+	// 设置投影变换的参数
+	p.SetPerspectiveProj(gPersProjInfo);
+
+	glUniformMatrix4fv(gWorldLocation, 1, GL_TRUE, (const GLfloat*)p.GetWPTrans());
+
+	glEnableVertexAttribArray(0);
+	glBindBuffer(GL_ARRAY_BUFFER, VBO);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, IBO);
+
+	glDrawElements(GL_TRIANGLES, 12, GL_UNSIGNED_INT, 0);
+
+	glDisableVertexAttribArray(0);
+
+	glutSwapBuffers();
+}
+
+
+static void InitializeGlutCallbacks()
+{
+	glutDisplayFunc(RenderSceneCB);
+	glutIdleFunc(RenderSceneCB);
+}
+
+static void CreateVertexBuffer()
+{
+	Vector3f Vertices[4];
+	Vertices[0] = Vector3f(-1.0f, -1.0f, 0.5773f);
+	Vertices[1] = Vector3f(0.0f, -1.0f, -1.15475f);
+	Vertices[2] = Vector3f(1.0f, -1.0f, 0.5773f);
+	Vertices[3] = Vector3f(0.0f, 1.0f, 0.0f);
+
+	glGenBuffers(1, &VBO);
+	glBindBuffer(GL_ARRAY_BUFFER, VBO);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(Vertices), Vertices, GL_STATIC_DRAW);
+}
+
+static void CreateIndexBuffer()
+{
+	unsigned int Indices[] = { 0, 3, 1,
+		1, 3, 2,
+		2, 3, 0,
+		0, 1, 2 };
+
+	glGenBuffers(1, &IBO);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, IBO);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(Indices), Indices, GL_STATIC_DRAW);
+}
+
+static void AddShader(GLuint ShaderProgram, const char* pShaderText, GLenum ShaderType)
+{
+	GLuint ShaderObj = glCreateShader(ShaderType);
+
+	if (ShaderObj == 0) {
+		fprintf(stderr, "Error creating shader type %d\n", ShaderType);
+		exit(1);
+	}
+
+	const GLchar* p[1];
+	p[0] = pShaderText;
+	GLint Lengths[1];
+	Lengths[0] = strlen(pShaderText);
+	glShaderSource(ShaderObj, 1, p, Lengths);
+	glCompileShader(ShaderObj);
+	GLint success;
+	glGetShaderiv(ShaderObj, GL_COMPILE_STATUS, &success);
+	if (!success) {
+		GLchar InfoLog[1024];
+		glGetShaderInfoLog(ShaderObj, 1024, NULL, InfoLog);
+		fprintf(stderr, "Error compiling shader type %d: '%s'\n", ShaderType, InfoLog);
+		exit(1);
+	}
+
+	glAttachShader(ShaderProgram, ShaderObj);
+}
+
+static void CompileShaders()
+{
+	GLuint ShaderProgram = glCreateProgram();
+
+	if (ShaderProgram == 0) {
+		fprintf(stderr, "Error creating shader program\n");
+		exit(1);
+	}
+
+	string vs, fs;
+
+	if (!ReadFile(pVSFileName, vs)) {
+		exit(1);
+	};
+
+	if (!ReadFile(pFSFileName, fs)) {
+		exit(1);
+	};
+
+	AddShader(ShaderProgram, vs.c_str(), GL_VERTEX_SHADER);
+	AddShader(ShaderProgram, fs.c_str(), GL_FRAGMENT_SHADER);
+
+	GLint Success = 0;
+	GLchar ErrorLog[1024] = { 0 };
+
+	glLinkProgram(ShaderProgram);
+	glGetProgramiv(ShaderProgram, GL_LINK_STATUS, &Success);
+	if (Success == 0) {
+		glGetProgramInfoLog(ShaderProgram, sizeof(ErrorLog), NULL, ErrorLog);
+		fprintf(stderr, "Error linking shader program: '%s'\n", ErrorLog);
+		exit(1);
+	}
+
+	glValidateProgram(ShaderProgram);
+	glGetProgramiv(ShaderProgram, GL_VALIDATE_STATUS, &Success);
+	if (!Success) {
+		glGetProgramInfoLog(ShaderProgram, sizeof(ErrorLog), NULL, ErrorLog);
+		fprintf(stderr, "Invalid shader program: '%s'\n", ErrorLog);
+		exit(1);
+	}
+
+	glUseProgram(ShaderProgram);
+
+	gWorldLocation = glGetUniformLocation(ShaderProgram, "gWorld");
+	assert(gWorldLocation != 0xFFFFFFFF);
+}
+
+int main(int argc, char** argv)
+{
+	glutInit(&argc, argv);
+	glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA);
+	glutInitWindowSize(WINDOW_WIDTH, WINDOW_HEIGHT);
+	glutInitWindowPosition(100, 100);
+	glutCreateWindow("Tutorial 12");
+
+	InitializeGlutCallbacks();
+
+	// Must be done after glut is initialized!
+	GLenum res = glewInit();
+	if (res != GLEW_OK) {
+		fprintf(stderr, "Error: '%s'\n", glewGetErrorString(res));
+		return 1;
+	}
+
+	glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+
+	CreateVertexBuffer();
+	CreateIndexBuffer();
+
+	CompileShaders();
+
+	// 初始化透视变换配置参数
+	gPersProjInfo.FOV = 30.0f;
+	gPersProjInfo.Height = WINDOW_HEIGHT;
+	gPersProjInfo.Width = WINDOW_WIDTH;
+	gPersProjInfo.zNear = 1.0f;
+	gPersProjInfo.zFar = 100.0f;
+
+	glutMainLoop();
+
+	return 0;
+}
